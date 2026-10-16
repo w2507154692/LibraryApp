@@ -159,6 +159,23 @@
                 android:text="开始闹钟（定时预约）"
                 android:backgroundTint="#2196F3"/>
 
+        <TextView android:id="@+id/tvBatteryStatus"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:padding="6dp"
+                  android:textSize="13sp"/>
+
+        <Button android:id="@+id/btnBatterySettings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="电池与后台设置"/>
+
+        <Button android:id="@+id/btnNotificationSettings"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="通知设置"
+                android:visibility="gone"/>
+
         <TextView android:id="@+id/tvCountdown"
                   android:layout_width="match_parent"
                   android:layout_height="wrap_content"

@@ -4,12 +4,17 @@ import android.app.AlarmManager;
 import android.app.DatePickerDialog;
 import android.app.PendingIntent;
 import android.app.TimePickerDialog;
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
@@ -37,6 +42,12 @@ public class MainActivity extends AppCompatActivity {
                 btnSelectTriggerTime, btnStartCountdown;
 
         private StateManager stateManager;
+        private Intent pendingSchedule;
+        private final SharedPreferences.OnSharedPreferenceChangeListener logListener =
+                (prefs, key) -> {
+                        if ("logs1".equals(key) || "logs2".equals(key))
+                                runOnUiThread(this::loadHistoryLogs);
+                };
 
         private Calendar scheduleDate        = null;
         private Calendar scheduleTriggerTime = null;
@@ -78,6 +89,8 @@ public class MainActivity extends AppCompatActivity {
                 btnStartCountdown    = findViewById(R.id.btnStartCountdown);
 
                 stateManager = new StateManager(this);
+                if (savedInstanceState != null)
+                        pendingSchedule = savedInstanceState.getParcelable("pendingSchedule");
 
                 restoreState();
                 loadHistoryLogs();
@@ -90,6 +103,39 @@ public class MainActivity extends AppCompatActivity {
                 btnSelectEndTime.setOnClickListener(v -> showEndTimePicker());
                 findViewById(R.id.btnSubmit).setOnClickListener(v -> executeNow());
                 btnStartCountdown.setOnClickListener(v -> startCountdownSchedule());
+                findViewById(R.id.btnBatterySettings).setOnClickListener(v -> openBatterySettings());
+                findViewById(R.id.btnNotificationSettings).setOnClickListener(v -> openAppSettings());
+        }
+
+        @Override protected void onStart() {
+                super.onStart();
+                stateManager.registerLogListener(logListener);
+                loadHistoryLogs();
+        }
+
+        @Override protected void onResume() {
+                super.onResume();
+                updatePowerStatus();
+                if (pendingSchedule != null) {
+                        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                        Intent schedule = pendingSchedule;
+                        pendingSchedule = null;
+                        if (canSchedule(am)) scheduleAlarms(schedule);
+                        else {
+                                stateManager.appendLog(1, "精确闹钟授权未获得，任务未安排");
+                                Toast.makeText(this, "未获得闹钟权限，任务未安排", Toast.LENGTH_LONG).show();
+                        }
+                }
+        }
+
+        @Override protected void onStop() {
+                stateManager.unregisterLogListener(logListener);
+                super.onStop();
+        }
+
+        @Override protected void onSaveInstanceState(Bundle outState) {
+                outState.putParcelable("pendingSchedule", pendingSchedule);
+                super.onSaveInstanceState(outState);
         }
 
         private int parseIntSafe(String s, int def) {
@@ -100,14 +146,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         private void startCountdownSchedule() {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                        AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
-                        if (am != null && !am.canScheduleExactAlarms()) {
-                                startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM));
-                                return;
-                        }
-                }
-
                 Calendar targetCal = Calendar.getInstance();
                 targetCal.set(Calendar.YEAR,         scheduleDate.get(Calendar.YEAR));
                 targetCal.set(Calendar.MONTH,        scheduleDate.get(Calendar.MONTH));
@@ -118,7 +156,10 @@ public class MainActivity extends AppCompatActivity {
                 targetCal.set(Calendar.MILLISECOND,  0);
                 long targetTimeMs = targetCal.getTimeInMillis();
 
-                if (targetTimeMs <= System.currentTimeMillis()) {
+                int offsetMs = parseIntSafe(etOffsetMs.getText().toString(), 500);
+                long staggerMs = parseLongSafe(etStaggerMs.getText().toString(), 0L);
+                if (targetTimeMs <= System.currentTimeMillis()
+                        || targetTimeMs + offsetMs <= System.currentTimeMillis()) {
                         Toast.makeText(this, "触发时间已过期，请重新设置", Toast.LENGTH_SHORT).show();
                         return;
                 }
@@ -130,47 +171,124 @@ public class MainActivity extends AppCompatActivity {
                         return;
                 }
 
-                int offsetMs = parseIntSafe(etOffsetMs.getText().toString(), 500);
-                long staggerMs = parseLongSafe(etStaggerMs.getText().toString(), 0L);
-
-                stateManager.clearLogs();
-                stateManager.clearCachedLogins();
-                isCountingDown   = true;
-                countdownEndTime = targetTimeMs;
-                saveState();
-
+                Intent schedule = buildAlarmIntent(targetTimeMs, "LOGIN", staggerMs);
+                schedule.putExtra("offsetMs", offsetMs);
                 AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                if (am == null) {
+                        stateManager.appendLog(1, "系统闹钟服务不可用，任务未安排");
+                        Toast.makeText(this, "系统闹钟不可用", Toast.LENGTH_LONG).show();
+                        return;
+                }
+                if (!canSchedule(am)) {
+                        pendingSchedule = schedule;
+                        stateManager.appendLog(1, "缺少精确闹钟权限，等待授权；任务尚未安排");
+                        try {
+                                startActivity(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                                        Uri.parse("package:" + getPackageName())));
+                        } catch (RuntimeException e) {
+                                pendingSchedule = null;
+                                stateManager.appendLog(1, "无法打开精确闹钟授权页面：" + e.getClass().getSimpleName());
+                                openAppSettings();
+                        }
+                        return;
+                }
+                scheduleAlarms(schedule);
+        }
+
+        private boolean canSchedule(AlarmManager am) {
+                return am != null && (Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                        || am.canScheduleExactAlarms());
+        }
+
+        private void scheduleAlarms(Intent schedule) {
+                long targetTimeMs = schedule.getLongExtra("targetTimeMs", 0L);
+                int offsetMs = schedule.getIntExtra("offsetMs", 500);
+                long staggerMs = schedule.getLongExtra("staggerMs", 0L);
+                long loginTimeMs = targetTimeMs - 30_000L;
+                long reserveTimeMs = targetTimeMs + offsetMs;
+                if (reserveTimeMs <= System.currentTimeMillis()) {
+                        stateManager.appendLog(1, "授权返回时预约时间已过，任务未安排");
+                        Toast.makeText(this, "预约时间已过，请重新设置", Toast.LENGTH_LONG).show();
+                        return;
+                }
+                AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+                if (!canSchedule(am)) {
+                        stateManager.appendLog(1, "精确闹钟不可用，任务未安排");
+                        Toast.makeText(this, "精确闹钟不可用", Toast.LENGTH_LONG).show();
+                        return;
+                }
                 int piFlags = PendingIntent.FLAG_UPDATE_CURRENT
                         | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+                int oldSequence = stateManager.getAlarmSequence();
+                int nextSequence = oldSequence >= 1_000_000 ? 1 : oldSequence + 1;
+                int loginCode = 1000 + nextSequence * 2;
+                int reserveCode = loginCode + 1;
+                Intent loginIntent = new Intent(schedule);
+                loginIntent.putExtra("action", "LOGIN");
+                loginIntent.putExtra("scheduledAtMs", loginTimeMs);
+                PendingIntent loginPi = PendingIntent.getBroadcast(this, loginCode, loginIntent, piFlags);
+                Intent reserveIntent = new Intent(schedule);
+                reserveIntent.putExtra("action", "RESERVE");
+                reserveIntent.putExtra("scheduledAtMs", reserveTimeMs);
+                PendingIntent reservePi = PendingIntent.getBroadcast(this, reserveCode, reserveIntent, piFlags);
+                boolean loginScheduled = loginTimeMs > System.currentTimeMillis();
+                try {
+                        if (loginScheduled) setExactAlarm(am, loginTimeMs, loginPi);
+                        else am.cancel(loginPi);
+                        setExactAlarm(am, reserveTimeMs, reservePi);
+                } catch (RuntimeException e) {
+                        try {
+                                am.cancel(loginPi);
+                                am.cancel(reservePi);
+                        } catch (RuntimeException cancelError) {
+                                stateManager.appendLog(1, "闹钟回滚失败：" + cancelError.getClass().getSimpleName());
+                        }
+                        stateManager.appendLog(1, "闹钟设置失败：" + e.getClass().getSimpleName());
+                        Toast.makeText(this, "新闹钟设置失败，原任务保留", Toast.LENGTH_LONG).show();
+                        return;
+                }
 
-                Intent loginIntent = buildAlarmIntent(targetTimeMs, "LOGIN", staggerMs);
-                PendingIntent loginPi = PendingIntent.getBroadcast(this, 201, loginIntent, piFlags);
-                setExactAlarm(am, targetTimeMs - 30_000L, loginPi);
-
-                Intent reserveIntent = buildAlarmIntent(targetTimeMs, "RESERVE", staggerMs);
-                PendingIntent reservePi = PendingIntent.getBroadcast(this, 202, reserveIntent, piFlags);
-                setExactAlarm(am, targetTimeMs + offsetMs, reservePi);
-
-                boolean dual = !etUsername2.getText().toString().trim().isEmpty();
+                cancelPreviousAlarms(am, oldSequence);
+                stateManager.saveAlarmSequence(nextSequence);
+                stateManager.clearCachedLogins();
+                isCountingDown = true;
+                countdownEndTime = targetTimeMs;
+                saveState();
+                boolean dual = !schedule.getStringExtra("user2").isEmpty();
                 setDualAccountMode(dual);
 
                 SimpleDateFormat stf = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
-                String modeStr = dual
-                        ? "双账号并行 (" + etUsername.getText().toString().trim()
-                          + " + " + etUsername2.getText().toString().trim() + ")"
-                        : "单账号 (" + etUsername.getText().toString().trim() + ")";
+                String modeStr = dual ? "双账号并行" : "单账号";
 
                 String staggerInfo = (dual && staggerMs > 0)
                         ? "\n账号2 错峰延迟: " + staggerMs + "ms"
                         : "";
 
-                tvLog1.setText("闹钟1(登录)：" + stf.format(targetTimeMs - 30_000L)
-                        + "\n闹钟2(预约)：" + stf.format(targetTimeMs + offsetMs) + " (+" + offsetMs + "ms)"
-                        + "\n模式：" + modeStr
-                        + staggerInfo
-                        + "\n\n请关闭本应用的\"电池优化\"开关，并确保屏幕不被强制断网。");
-                if (dual) tvLog2.setText("等待闹钟触发...");
+                stateManager.appendLog(1, "闹钟已安排：预登录="
+                        + (loginScheduled ? stf.format(loginTimeMs) : "已跳过")
+                        + "，预约=" + stf.format(reserveTimeMs) + "，偏移=" + offsetMs + "ms"
+                        + "，模式=" + modeStr + staggerInfo);
                 updateCountdown();
+                updatePowerStatus();
+        }
+
+        private void cancelPreviousAlarms(AlarmManager am, int sequence) {
+                int flags = PendingIntent.FLAG_NO_CREATE
+                        | (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
+                int[] codes = sequence == 0
+                        ? new int[]{201, 202}
+                        : new int[]{1000 + sequence * 2, 1001 + sequence * 2};
+                for (int code : codes) {
+                        PendingIntent previous = PendingIntent.getBroadcast(
+                                this, code, new Intent(this, ReserveReceiver.class), flags);
+                        if (previous != null) {
+                                try {
+                                        am.cancel(previous);
+                                } catch (RuntimeException e) {
+                                        stateManager.appendLog(1, "旧闹钟撤销失败：" + e.getClass().getSimpleName());
+                                }
+                        }
+                }
         }
 
         private void setExactAlarm(AlarmManager am, long timeMs, PendingIntent pi) {
@@ -179,6 +297,35 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                         am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeMs, pi);
                 }
+        }
+
+        private void updatePowerStatus() {
+                PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+                boolean optimized = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                        && pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName());
+                boolean notificationsOff = Build.VERSION.SDK_INT >= 33
+                        && checkSelfPermission("android.permission.POST_NOTIFICATIONS")
+                        != PackageManager.PERMISSION_GRANTED;
+                ((TextView) findViewById(R.id.tvBatteryStatus)).setText(
+                        (Build.VERSION.SDK_INT < Build.VERSION_CODES.M ? "请确认允许后台运行和自启动。"
+                                : optimized ? "电池优化未豁免；请允许后台运行和自启动。"
+                                : "系统电池优化已豁免；仍需确认厂商后台运行和自启动设置。")
+                        + (notificationsOff ? " 通知权限关闭，前台服务通知可能不可见。" : ""));
+                findViewById(R.id.btnNotificationSettings).setVisibility(
+                        notificationsOff ? View.VISIBLE : View.GONE);
+        }
+
+        private void openBatterySettings() {
+                try {
+                        startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                } catch (ActivityNotFoundException e) {
+                        openAppSettings();
+                }
+        }
+
+        private void openAppSettings() {
+                startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                        Uri.parse("package:" + getPackageName())));
         }
 
         private Intent buildAlarmIntent(long targetTimeMs, String action, long staggerMs) {
@@ -230,21 +377,20 @@ public class MainActivity extends AppCompatActivity {
                 boolean dual = !u2.isEmpty();
                 setDualAccountMode(dual);
 
-                tvLog1.setText("正在执行（账号1）...");
-                if (dual) tvLog2.setText("正在执行（账号2）...");
+                stateManager.appendLog(1, "手动执行开始");
 
                 if (dual) {
                         long staggerMs = parseLongSafe(etStaggerMs.getText().toString(), 0L);
 
                         ReservationManager mgr1 = new ReservationManager(
-                                msg -> tvLog1.append("\n" + msg), () -> {}, stateManager);
+                                msg -> {}, () -> {}, stateManager);
                         mgr1.setAccountId(1);
                         mgr1.setSegmentFilter(0, 2);
                         mgr1.setRetryParams(a, b);
                         mgr1.start(u1, p1, rid, date, startT, endT, rsn, m1);
 
                         ReservationManager mgr2 = new ReservationManager(
-                                msg -> tvLog2.append("\n" + msg), () -> {}, stateManager);
+                                msg -> {}, () -> {}, stateManager);
                         mgr2.setAccountId(2);
                         mgr2.setSegmentFilter(1, 2);
                         mgr2.setRetryParams(a, b);
@@ -254,7 +400,7 @@ public class MainActivity extends AppCompatActivity {
                                 staggerMs);
                 } else {
                         ReservationManager mgr = new ReservationManager(
-                                msg -> tvLog1.append("\n" + msg), () -> {}, stateManager);
+                                msg -> {}, () -> {}, stateManager);
                         mgr.setAccountId(1);
                         mgr.setRetryParams(a, b);
                         mgr.start(u1, p1, rid, date, startT, endT, rsn, m1);
@@ -368,10 +514,12 @@ public class MainActivity extends AppCompatActivity {
         private void loadHistoryLogs() {
                 String log1 = stateManager.getLog(1);
                 String log2 = stateManager.getLog(2);
-                if (log1 != null && !log1.isEmpty()) tvLog1.setText("上次运行日志（账号1）:\n" + log1);
+                tvLog1.setText(log1 == null || log1.isEmpty() ? "等待..." : log1.trim());
                 if (log2 != null && !log2.isEmpty()) {
                         setDualAccountMode(true);
-                        tvLog2.setText("上次运行日志（账号2）:\n" + log2);
+                        tvLog2.setText(log2.trim());
+                } else {
+                        tvLog2.setText("等待...");
                 }
         }
 

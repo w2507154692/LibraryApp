@@ -36,19 +36,45 @@ public class ReservationForegroundService extends Service {
     public void onCreate() {
         super.onCreate();
         stateManager = new StateManager(this);
-        createNotificationChannel();
-        startForeground(1001, buildNotification("CNU 预约准备中..."));
+        try {
+            createNotificationChannel();
+            startForeground(1001, buildNotification("CNU 预约准备中..."));
+            stateManager.appendLog(1, "前台服务已启动");
+        } catch (RuntimeException e) {
+            stateManager.appendLog(1, "前台服务进入前台失败：" + e.getClass().getSimpleName());
+            ReserveReceiver.releaseReceiverWakeLock();
+            throw e;
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent == null) return START_NOT_STICKY;
-
-        acquireWakeLock();
-        ReserveReceiver.releaseReceiverWakeLock();
+        if (intent == null) {
+            stateManager.appendLog(1, "服务收到空任务，未执行");
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+        try {
+            acquireWakeLock();
+        } catch (RuntimeException e) {
+            stateManager.appendLog(1, "服务唤醒锁获取失败：" + e.getClass().getSimpleName());
+            Log.e(TAG, "Wake lock failed", e);
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        } finally {
+            ReserveReceiver.releaseReceiverWakeLock();
+        }
 
         String action = intent.getStringExtra("action");
         if (action == null) action = ACTION_LOGIN;
+        if (!ACTION_LOGIN.equals(action) && !ACTION_RESERVE.equals(action)) {
+            stateManager.appendLog(1, "服务收到未知动作，未执行");
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+        long scheduledAt = intent.getLongExtra("scheduledAtMs", 0L);
+        stateManager.appendLog(1, action + " 服务开始处理，距预定时间="
+                + (scheduledAt > 0 ? System.currentTimeMillis() - scheduledAt : 0L) + "ms");
 
         String user1    = safeStr(intent.getStringExtra("user"));
         String pwd1     = safeStr(intent.getStringExtra("pwd"));
@@ -61,6 +87,11 @@ public class ReservationForegroundService extends Service {
         String reason   = safeStr(intent.getStringExtra("reason"));
         String members1 = safeStr(intent.getStringExtra("members"));
         String members2 = safeStr(intent.getStringExtra("members2"));
+        if (user1.isEmpty() || pwd1.isEmpty() || roomId.isEmpty()) {
+            stateManager.appendLog(1, action + " 参数缺失，未执行");
+            stopSelf(startId);
+            return START_NOT_STICKY;
+        }
 
         long staggerMs = intent.getLongExtra("staggerMs", 0L);
 
@@ -84,18 +115,24 @@ public class ReservationForegroundService extends Service {
                 + " hasTwoAccounts=" + hasTwoAccounts
                 + " staggerMs=" + staggerMs);
 
-        if (ACTION_RESERVE.equals(action)) {
-            String staggerInfo = (hasTwoAccounts && staggerMs > 0)
-                    ? "（账号2 错峰 " + staggerMs + "ms）"
-                    : "";
-            updateNotification("执行预约..." + staggerInfo);
-            handleReserveAction(user1, pwd1, user2, pwd2,
-                    roomId, date, startT, endT, reason, members1, members2,
-                    hasTwoAccounts, staggerMs);
-        } else {
-            updateNotification("预登录中（预约前" + 30 + "秒）...");
-            handleLoginAction(user1, pwd1, user2, pwd2,
-                    roomId, date, startT, endT, reason, members1, members2, hasTwoAccounts);
+        try {
+            if (ACTION_RESERVE.equals(action)) {
+                String staggerInfo = (hasTwoAccounts && staggerMs > 0)
+                        ? "（账号2 错峰 " + staggerMs + "ms）"
+                        : "";
+                updateNotification("执行预约..." + staggerInfo);
+                handleReserveAction(user1, pwd1, user2, pwd2,
+                        roomId, date, startT, endT, reason, members1, members2,
+                        hasTwoAccounts, staggerMs);
+            } else {
+                updateNotification("预登录中（预约前" + 30 + "秒）...");
+                handleLoginAction(user1, pwd1, user2, pwd2,
+                        roomId, date, startT, endT, reason, members1, members2, hasTwoAccounts);
+            }
+        } catch (RuntimeException e) {
+            stateManager.appendLog(1, action + " 服务执行失败：" + e.getClass().getSimpleName());
+            Log.e(TAG, "Service action failed", e);
+            stopSelf(startId);
         }
 
         return START_NOT_STICKY;

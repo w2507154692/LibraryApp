@@ -14,6 +14,7 @@ import okhttp3.HttpUrl;
 
 public class StateManager {
     private static final String PREF_NAME = "cnu_reservation_v2_state";
+    private static final Object LOG_LOCK = new Object();
     private final SharedPreferences prefs;
 
     public StateManager(Context context) {
@@ -78,6 +79,11 @@ public class StateManager {
     public long    getCountdownTargetTime() { return prefs.getLong("ct",    0); }
     public boolean isCountdownActive()      { return prefs.getBoolean("ca", false); }
 
+    public int getAlarmSequence() { return prefs.getInt("alarmSequence", 0); }
+    public void saveAlarmSequence(int sequence) {
+        prefs.edit().putInt("alarmSequence", sequence).commit();
+    }
+
     public void saveCachedLogin(int account, String token, long accNo, String membersStr) {
         prefs.edit()
                 .putString("tok"  + account, token)
@@ -114,17 +120,29 @@ public class StateManager {
     }
 
     public void appendLog(int account, String msg) {
-        String key      = "logs" + account;
-        String existing = prefs.getString(key, "");
-        String time     = new SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(new Date());
-        String newLog   = existing + "\n[" + time + "] " + msg;
-        if (newLog.length() > 12000) newLog = newLog.substring(newLog.length() - 12000);
-        prefs.edit().putString(key, newLog).apply();
+        synchronized (LOG_LOCK) {
+            String key      = "logs" + account;
+            String existing = prefs.getString(key, "");
+            String time     = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
+            String newLog   = existing + "\n[" + time + "] " + msg;
+            if (newLog.length() > 12000) newLog = newLog.substring(newLog.length() - 12000);
+            prefs.edit().putString(key, newLog).commit();
+        }
     }
 
     public String getLog(int account) { return prefs.getString("logs" + account, ""); }
 
     public void clearLogs() {
-        prefs.edit().remove("logs1").remove("logs2").apply();
+        synchronized (LOG_LOCK) {
+            prefs.edit().remove("logs1").remove("logs2").commit();
+        }
+    }
+
+    public void registerLogListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener);
+    }
+
+    public void unregisterLogListener(SharedPreferences.OnSharedPreferenceChangeListener listener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener);
     }
 }

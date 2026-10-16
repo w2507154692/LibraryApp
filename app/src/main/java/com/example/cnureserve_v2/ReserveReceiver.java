@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.os.Build;
 import android.os.PowerManager;
+import android.util.Log;
 
 /**
  * 闹钟广播接收器。
@@ -39,17 +40,31 @@ public class ReserveReceiver extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        // ① 立即持锁，防止 CPU 在 startForegroundService 返回前睡去
-        acquireReceiverWakeLock(context);
-
-        // ② 将所有 extras（含 action / 账号信息 / 时间参数）原样转发给 Service
-        Intent serviceIntent = new Intent(context, ReservationForegroundService.class);
-        if (intent.getExtras() != null) serviceIntent.putExtras(intent.getExtras());
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.startForegroundService(serviceIntent);
-        } else {
-            context.startService(serviceIntent);
+        StateManager state = new StateManager(context);
+        String action = intent == null ? null : intent.getStringExtra("action");
+        if (!"LOGIN".equals(action) && !"RESERVE".equals(action)) {
+            state.appendLog(1, "收到未知闹钟动作，未启动服务");
+            return;
+        }
+        try {
+            acquireReceiverWakeLock(context);
+            long target = intent.getLongExtra("scheduledAtMs", 0L);
+            long arrivedAt = System.currentTimeMillis();
+            Intent serviceIntent = new Intent(context, ReservationForegroundService.class);
+            if (intent.getExtras() != null) serviceIntent.putExtras(intent.getExtras());
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent);
+            } else {
+                context.startService(serviceIntent);
+            }
+            state.appendLog(1, action + " 闹钟广播到达，延迟="
+                    + (target > 0 ? arrivedAt - target : 0L) + "ms");
+            state.appendLog(1, action + " 前台服务启动请求已提交");
+        } catch (RuntimeException e) {
+            state.appendLog(1, action + " 闹钟已到达，但前台服务启动失败："
+                    + e.getClass().getSimpleName());
+            Log.e("ReserveReceiver", "Service start failed", e);
+            releaseReceiverWakeLock();
         }
     }
 }

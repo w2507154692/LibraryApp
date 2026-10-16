@@ -2,6 +2,7 @@ package com.example.cnureserve_v2;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Base64;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -117,13 +118,17 @@ public class ReservationManager {
 
     private void fetchPublicKeyThenLogin(String user, String pwd, String roomId, String date,
                                          String start, String end, String reason, String extraMembers) {
+        long queuedAt = SystemClock.elapsedRealtime();
+        log("登录公钥 HTTP 请求入队");
         client.newCall(new Request.Builder().url(BASE_URL + "/login/publicKey").get().build())
                 .enqueue(new Callback() {
                     @Override public void onFailure(Call call, IOException e) {
+                        log("登录公钥 HTTP 失败，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms");
                         log("❌ 公钥获取失败: " + e.getMessage());
                         decrementPendingRequests();
                     }
                     @Override public void onResponse(Call call, Response response) throws IOException {
+                        log("登录公钥 HTTP 响应，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms，状态=" + response.code());
                         try {
                             JsonObject json = JsonParser.parseString(response.body().string()).getAsJsonObject();
                             String pk = json.getAsJsonObject("data").get("publicKey").getAsString();
@@ -147,14 +152,18 @@ public class ReservationManager {
             body.addProperty("password",    encPwd);
             body.addProperty("privacy",     true);
             body.addProperty("consoleType", 16);
+            long queuedAt = SystemClock.elapsedRealtime();
+            log("登录 HTTP 请求入队");
             client.newCall(new Request.Builder().url(BASE_URL + "/login/user")
                     .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
                     .build()).enqueue(new Callback() {
                 @Override public void onFailure(Call call, IOException e) {
+                    log("登录 HTTP 失败，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms");
                     log("❌ 登录请求失败: " + e.getMessage());
                     decrementPendingRequests();
                 }
                 @Override public void onResponse(Call call, Response response) throws IOException {
+                    log("登录 HTTP 响应，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms，状态=" + response.code());
                     try {
                         JsonObject res = JsonParser.parseString(response.body().string()).getAsJsonObject();
                         if (res.get("code").getAsInt() == 0) {
@@ -209,13 +218,17 @@ public class ReservationManager {
                 + " | 日期: " + date
                 + " | 分配时段（共" + preview.size() + "段）: " + segsToStr(preview));
         incrementPendingRequests();
+        long queuedAt = SystemClock.elapsedRealtime();
+        log("预登录公钥 HTTP 请求入队");
         client.newCall(new Request.Builder().url(BASE_URL + "/login/publicKey").get().build())
                 .enqueue(new Callback() {
                     @Override public void onFailure(Call call, IOException e) {
+                        log("预登录公钥 HTTP 失败，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms");
                         log("❌ 公钥获取失败: " + e.getMessage());
                         decrementPendingRequests();
                     }
                     @Override public void onResponse(Call call, Response response) throws IOException {
+                        log("预登录公钥 HTTP 响应，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms，状态=" + response.code());
                         try {
                             JsonObject json = JsonParser.parseString(response.body().string()).getAsJsonObject();
                             String pk = json.getAsJsonObject("data").get("publicKey").getAsString();
@@ -286,7 +299,8 @@ public class ReservationManager {
         JsonArray dArr = new JsonArray(); dArr.add(Long.parseLong(rid));      payload.add("resvDev", dArr);
 
         incrementPendingRequests();
-
+        long queuedAt = SystemClock.elapsedRealtime();
+        log("预约 HTTP 请求入队，时段=" + slotDesc);
         client.newCall(new Request.Builder()
                 .url(BASE_URL + "/reserve")
                 .header("Token", token)
@@ -294,6 +308,7 @@ public class ReservationManager {
                 .build()).enqueue(new Callback() {
 
             @Override public void onFailure(Call call, IOException e) {
+                log("预约 HTTP 失败，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms");
                 decrementPendingRequests();
                 // 收到失败响应后，等待设定好的时间（重试 b ms 或 下一段 1000ms）再继续
                 if (idx == 0 && retryCount < maxFirstSegmentRetries) {
@@ -306,6 +321,7 @@ public class ReservationManager {
             }
 
             @Override public void onResponse(Call call, Response response) throws IOException {
+                log("预约 HTTP 响应，耗时=" + (SystemClock.elapsedRealtime() - queuedAt) + "ms，状态=" + response.code());
                 String raw = response.body().string();
                 boolean isConflict = false;
                 boolean isSuccess = false;
