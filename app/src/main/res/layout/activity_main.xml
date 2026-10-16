@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:padding="16dp">
+
+    <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+        <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="CNU 预约 Pro"
+                android:textSize="24sp"
+                android:layout_gravity="center"
+                android:layout_marginBottom="20dp"/>
+
+        <!-- ===== 账号 1 ===== -->
+        <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="── 账号 1 ──"
+                android:textSize="13sp"
+                android:textColor="#888888"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="2dp"/>
+
+        <EditText android:id="@+id/etUsername"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="账号1 学号"/>
+
+        <EditText android:id="@+id/etPassword"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="账号1 密码"
+                  android:inputType="textPassword"/>
+
+        <EditText android:id="@+id/etMembers"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="账号1 附加成员学号（逗号分隔，可空）"/>
+
+        <!-- ===== 账号 2（可选） ===== -->
+        <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="── 账号 2（可选，填写后双账号并行预约）──"
+                android:textSize="13sp"
+                android:textColor="#888888"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="2dp"/>
+
+        <EditText android:id="@+id/etUsername2"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="账号2 学号（不填则仅用账号1）"/>
+
+        <EditText android:id="@+id/etPassword2"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="账号2 密码"
+                  android:inputType="textPassword"/>
+
+        <EditText android:id="@+id/etMembers2"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="账号2 附加成员学号（逗号分隔，可空）"/>
+
+        <!-- 账号2 错峰延迟 -->
+        <EditText android:id="@+id/etStaggerMs"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:inputType="number"
+                  android:hint="账号2 错峰延迟(ms)，默认 0（防止双账号同时抢占冲突）"/>
+
+        <!-- ===== 公共预约参数 ===== -->
+        <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="── 预约参数 ──"
+                android:textSize="13sp"
+                android:textColor="#888888"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="2dp"/>
+
+        <EditText android:id="@+id/etRoomId"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="研讨间 ID"/>
+
+        <EditText android:id="@+id/etReason"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:hint="预约原因"/>
+
+        <EditText android:id="@+id/etOffsetMs"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:inputType="number"
+                  android:hint="闹钟2 预约提前量(ms)，默认 500（相对触发时间的偏移）"/>
+
+        <!-- 新增: 第一段重试次数 a 与 重试间隔 b -->
+        <EditText android:id="@+id/etFirstSegmentRetries"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:inputType="number"
+                  android:hint="第一段失败重试次数 a (默认2)"/>
+
+        <EditText android:id="@+id/etRetryIntervalMs"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:inputType="number"
+                  android:hint="第一段/被占重试间隔 b (ms，默认1000)"/>
+
+        <!-- ===== 时间设置 ===== -->
+        <Button android:id="@+id/btnSelectDate"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="选择预约日期"
+                android:layout_marginTop="6dp"/>
+
+        <Button android:id="@+id/btnSelectTriggerTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="触发时间（闹钟）"/>
+
+        <Button android:id="@+id/btnSelectStartTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="预约开始时间"/>
+
+        <Button android:id="@+id/btnSelectEndTime"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="预约结束时间"/>
+
+        <TextView android:id="@+id/tvScheduledTime"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:padding="10dp"
+                  android:text="未设定"
+                  android:background="#EDE7F6"
+                  android:layout_marginTop="4dp"/>
+
+        <!-- ===== 操作按钮 ===== -->
+        <Button android:id="@+id/btnSubmit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="立即手动执行"
+                android:backgroundTint="#4CAF50"
+                android:layout_marginTop="8dp"/>
+
+        <Button android:id="@+id/btnStartCountdown"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="开始闹钟（定时预约）"
+                android:backgroundTint="#2196F3"/>
+
+        <TextView android:id="@+id/tvCountdown"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="00:00:00"
+                  android:textSize="18sp"
+                  android:textAlignment="center"
+                  android:background="#FFF3E0"
+                  android:padding="6dp"/>
+
+        <!-- ===== 账号1 日志 ===== -->
+        <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="📋 账号1 日志"
+                android:textSize="13sp"
+                android:textColor="#1976D2"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="2dp"/>
+
+        <TextView android:id="@+id/tvLog1"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="等待..."
+                  android:background="#E3F2FD"
+                  android:padding="8dp"
+                  android:minLines="4"
+                  android:textSize="12sp"/>
+
+        <!-- ===== 账号2 日志（默认隐藏） ===== -->
+        <TextView android:id="@+id/tvLog2Header"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="📋 账号2 日志"
+                  android:textSize="13sp"
+                  android:textColor="#388E3C"
+                  android:layout_marginTop="10dp"
+                  android:layout_marginBottom="2dp"
+                  android:visibility="gone"/>
+
+        <TextView android:id="@+id/tvLog2"
+                  android:layout_width="match_parent"
+                  android:layout_height="wrap_content"
+                  android:text="等待..."
+                  android:background="#E8F5E9"
+                  android:padding="8dp"
+                  android:minLines="4"
+                  android:textSize="12sp"
+                  android:visibility="gone"/>
+
+    </LinearLayout>
+</ScrollView>

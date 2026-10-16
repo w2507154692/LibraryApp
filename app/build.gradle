@@ -1,0 +1,36 @@
+// app/build.gradle
+plugins {
+    id 'com.android.application' version '8.1.0'
+}
+
+android {
+    namespace 'com.example.cnureserve_v2'
+    compileSdk 34
+    defaultConfig {
+        applicationId "com.example.cnureserve_v2"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0_v2"
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.9.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'com.squareup.okhttp3:okhttp:4.11.0'
+    implementation 'com.google.code.gson:gson:2.10.1'
+    implementation 'org.bouncycastle:bcprov-jdk15on:1.70'
+}
