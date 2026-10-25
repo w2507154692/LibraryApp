@@ -6,6 +6,21 @@ plugins {
 android {
     namespace 'com.example.cnureserve_v2'
     compileSdk 34
+
+    // Release builds are signed by the keystore supplied through GitHub Actions
+    // secrets. The keystore is intentionally kept outside the repository.
+    signingConfigs {
+        release {
+            def keystorePath = System.getenv("ANDROID_KEYSTORE_FILE")
+            if (keystorePath != null && !keystorePath.trim().isEmpty()) {
+                storeFile file(keystorePath)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     defaultConfig {
         applicationId "com.example.cnureserve_v2"
         minSdk 24
@@ -17,6 +32,7 @@ android {
     buildTypes {
         release {
             minifyEnabled false
+            signingConfig signingConfigs.release
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
