@@ -190,7 +190,6 @@ public class ReservationManager {
                                 });
                             } else {
                                 log("✅ 登录成功 | 账号ID: " + accNo);
-                                decrementPendingRequests();
                                 List<TimeSegment> segs = getFilteredSegments(start, end);
                                 mainHandler.post(() -> executeRoom(
                                         token, accNo, members, segs, 0, 0,

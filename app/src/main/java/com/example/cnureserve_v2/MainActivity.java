@@ -243,12 +243,12 @@ public class MainActivity extends AppCompatActivity {
                 int loginCode = 1000 + nextSequence * 2;
                 Intent loginIntent = new Intent(schedule);
                 loginIntent.putExtra("action", "LOGIN");
-                loginIntent.putExtra("scheduledAtMs", loginTimeMs);
+                long wakeTimeMs = Math.max(loginTimeMs, System.currentTimeMillis() + 1_000L);
+                loginIntent.putExtra("scheduledAtMs", wakeTimeMs);
                 PendingIntent loginPi = PendingIntent.getBroadcast(this, loginCode, loginIntent, piFlags);
-                boolean loginScheduled = loginTimeMs > System.currentTimeMillis();
+                boolean loginScheduled = true;
                 try {
-                        if (loginScheduled) setExactAlarm(am, loginTimeMs, loginPi);
-                        else am.cancel(loginPi);
+                        setExactAlarm(am, wakeTimeMs, loginPi);
                 } catch (RuntimeException e) {
                         try {
                                 am.cancel(loginPi);
