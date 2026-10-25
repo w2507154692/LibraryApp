@@ -114,6 +114,7 @@ public class ReservationManager {
         setReservationParams(roomId, date, start, end, reason);
         if (parseRoomIds(cachedRoomIds).isEmpty()) {
             log("❌ 未选择有效研讨间，任务未启动");
+            if (completionListener != null) mainHandler.post(completionListener::onComplete);
             return;
         }
         List<TimeSegment> segs = getFilteredSegments(start, end);
