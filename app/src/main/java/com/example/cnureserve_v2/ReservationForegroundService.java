@@ -25,12 +25,15 @@ public class ReservationForegroundService extends Service {
     private StateManager stateManager;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private long pendingReserveAtMs = 0L;
+    private Intent pendingReserveIntent;
 
     private ReservationManager manager1;
     private ReservationManager manager2;
 
     private int activeManagers    = 0;
     private int completedManagers = 0;
+    private boolean waitingForReserve = false;
 
     @Override
     public void onCreate() {
@@ -117,6 +120,7 @@ public class ReservationForegroundService extends Service {
 
         try {
             if (ACTION_RESERVE.equals(action)) {
+                waitingForReserve = false;
                 String staggerInfo = (hasTwoAccounts && staggerMs > 0)
                         ? "（账号2 错峰 " + staggerMs + "ms）"
                         : "";
@@ -125,9 +129,18 @@ public class ReservationForegroundService extends Service {
                         roomId, date, startT, endT, reason, members1, members2,
                         hasTwoAccounts, staggerMs);
             } else {
-                updateNotification("预登录中（预约前" + 30 + "秒）...");
+                waitingForReserve = true;
+                updateNotification("预登录中（预约前5分钟）...");
                 handleLoginAction(user1, pwd1, user2, pwd2,
                         roomId, date, startT, endT, reason, members1, members2, hasTwoAccounts);
+                pendingReserveAtMs = intent.getLongExtra("targetTimeMs", 0L)
+                        + intent.getIntExtra("offsetMs", 500);
+                pendingReserveIntent = new Intent(intent);
+                pendingReserveIntent.putExtra("action", ACTION_RESERVE);
+                pendingReserveIntent.putExtra("scheduledAtMs", pendingReserveAtMs);
+                long waitMs = Math.max(0L, pendingReserveAtMs - System.currentTimeMillis());
+                stateManager.appendLog(1, "登录后由同一前台服务等待预约，剩余=" + waitMs + "ms");
+                mainHandler.postDelayed(this::runPendingReservation, waitMs);
             }
         } catch (RuntimeException e) {
             stateManager.appendLog(1, action + " 服务执行失败：" + e.getClass().getSimpleName());
@@ -136,6 +149,43 @@ public class ReservationForegroundService extends Service {
         }
 
         return START_NOT_STICKY;
+    }
+
+    private void runPendingReservation() {
+        if (pendingReserveIntent == null) return;
+        if (stateManager.getCachedToken(1).isEmpty()) {
+            long remaining = pendingReserveAtMs - System.currentTimeMillis();
+            if (remaining > -60_000L) {
+                mainHandler.postDelayed(this::runPendingReservation, 500L);
+                return;
+            }
+            stateManager.appendLog(1, "服务内预约到点但登录 token 尚未完成");
+        }
+        waitingForReserve = false;
+        Intent reserve = pendingReserveIntent;
+        pendingReserveIntent = null;
+        stateManager.appendLog(1, "服务内预约到点，开始执行");
+        handleReserveIntent(reserve);
+    }
+
+    private void handleReserveIntent(Intent intent) {
+        String user1 = safeStr(intent.getStringExtra("user"));
+        String pwd1 = safeStr(intent.getStringExtra("pwd"));
+        String user2 = safeStr(intent.getStringExtra("user2"));
+        String pwd2 = safeStr(intent.getStringExtra("pwd2"));
+        String roomId = safeStr(intent.getStringExtra("roomId"));
+        String date = safeStr(intent.getStringExtra("date"));
+        String startT = safeStr(intent.getStringExtra("startTime"));
+        String endT = safeStr(intent.getStringExtra("endTime"));
+        String reason = safeStr(intent.getStringExtra("reason"));
+        String members1 = safeStr(intent.getStringExtra("members"));
+        String members2 = safeStr(intent.getStringExtra("members2"));
+        long staggerMs = intent.getLongExtra("staggerMs", 0L);
+        boolean hasTwoAccounts = !user2.isEmpty();
+        completedManagers = 0;
+        activeManagers = hasTwoAccounts ? 2 : 1;
+        handleReserveAction(user1, pwd1, user2, pwd2, roomId, date, startT, endT,
+                reason, members1, members2, hasTwoAccounts, staggerMs);
     }
 
     private void handleLoginAction(String user1, String pwd1, String user2, String pwd2,
@@ -195,6 +245,10 @@ public class ReservationForegroundService extends Service {
     private void onManagerComplete() {
         completedManagers++;
         Log.d(TAG, "Manager 完成 " + completedManagers + "/" + activeManagers);
+        if (waitingForReserve) {
+            Log.d(TAG, "登录阶段完成，服务继续等待预约时刻");
+            return;
+        }
         if (completedManagers >= activeManagers) {
             Log.d(TAG, "全部完成，Service 停止");
             mainHandler.post(this::stopSelf);

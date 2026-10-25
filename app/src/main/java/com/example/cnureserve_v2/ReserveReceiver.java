@@ -42,7 +42,7 @@ public class ReserveReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         StateManager state = new StateManager(context);
         String action = intent == null ? null : intent.getStringExtra("action");
-        if (!"LOGIN".equals(action) && !"RESERVE".equals(action)) {
+        if (!"LOGIN".equals(action) && !"RESERVE".equals(action) && !"PREPARE".equals(action)) {
             state.appendLog(1, "收到未知闹钟动作，未启动服务");
             return;
         }

@@ -21,7 +21,11 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Locale;
@@ -40,6 +44,18 @@ public class MainActivity extends AppCompatActivity {
         private TextView tvScheduledTime, tvCountdown;
         private Button   btnSelectDate, btnSelectStartTime, btnSelectEndTime,
                 btnSelectTriggerTime, btnStartCountdown;
+        private Button btnSelectRoom;
+
+        private static final String[] ROOM_NAMES = {
+                "405（小）", "406（小）", "407（小）", "408（小）", "505（小）", "506（小）",
+                "507（小）", "508（小）", "605（小）", "606（小）", "401（大）", "402（大）",
+                "601（大）", "602（大）"
+        };
+        private static final String[] ROOM_IDS = {
+                "100533547", "100533559", "100533563", "100533567", "100533571", "100533575",
+                "100533579", "100533583", "100533595", "100533599", "100533535", "100533543",
+                "100533587", "100533591"
+        };
 
         private StateManager stateManager;
         private Intent pendingSchedule;
@@ -87,6 +103,7 @@ public class MainActivity extends AppCompatActivity {
                 btnSelectStartTime   = findViewById(R.id.btnSelectStartTime);
                 btnSelectEndTime     = findViewById(R.id.btnSelectEndTime);
                 btnStartCountdown    = findViewById(R.id.btnStartCountdown);
+                btnSelectRoom        = findViewById(R.id.btnSelectRoom);
 
                 stateManager = new StateManager(this);
                 if (savedInstanceState != null)
@@ -103,6 +120,7 @@ public class MainActivity extends AppCompatActivity {
                 btnSelectEndTime.setOnClickListener(v -> showEndTimePicker());
                 findViewById(R.id.btnSubmit).setOnClickListener(v -> executeNow());
                 btnStartCountdown.setOnClickListener(v -> startCountdownSchedule());
+                btnSelectRoom.setOnClickListener(v -> showRoomPicker());
                 findViewById(R.id.btnBatterySettings).setOnClickListener(v -> openBatterySettings());
                 findViewById(R.id.btnNotificationSettings).setOnClickListener(v -> openAppSettings());
         }
@@ -167,9 +185,10 @@ public class MainActivity extends AppCompatActivity {
                 if (etUsername.getText().toString().trim().isEmpty()
                         || etPassword.getText().toString().trim().isEmpty()
                         || etRoomId.getText().toString().trim().isEmpty()) {
-                        Toast.makeText(this, "请填写账号1学号、密码和研讨间ID", Toast.LENGTH_SHORT).show();
+                        Toast.makeText(this, "请填写账号1学号、密码和研讨间（可多选）", Toast.LENGTH_SHORT).show();
                         return;
                 }
+                if (!validateRoomSelection(etRoomId.getText().toString())) return;
 
                 Intent schedule = buildAlarmIntent(targetTimeMs, "LOGIN", staggerMs);
                 schedule.putExtra("offsetMs", offsetMs);
@@ -204,7 +223,7 @@ public class MainActivity extends AppCompatActivity {
                 long targetTimeMs = schedule.getLongExtra("targetTimeMs", 0L);
                 int offsetMs = schedule.getIntExtra("offsetMs", 500);
                 long staggerMs = schedule.getLongExtra("staggerMs", 0L);
-                long loginTimeMs = targetTimeMs - 30_000L;
+                long loginTimeMs = targetTimeMs - 5 * 60_000L;
                 long reserveTimeMs = targetTimeMs + offsetMs;
                 if (reserveTimeMs <= System.currentTimeMillis()) {
                         stateManager.appendLog(1, "授权返回时预约时间已过，任务未安排");
@@ -222,24 +241,17 @@ public class MainActivity extends AppCompatActivity {
                 int oldSequence = stateManager.getAlarmSequence();
                 int nextSequence = oldSequence >= 1_000_000 ? 1 : oldSequence + 1;
                 int loginCode = 1000 + nextSequence * 2;
-                int reserveCode = loginCode + 1;
                 Intent loginIntent = new Intent(schedule);
                 loginIntent.putExtra("action", "LOGIN");
                 loginIntent.putExtra("scheduledAtMs", loginTimeMs);
                 PendingIntent loginPi = PendingIntent.getBroadcast(this, loginCode, loginIntent, piFlags);
-                Intent reserveIntent = new Intent(schedule);
-                reserveIntent.putExtra("action", "RESERVE");
-                reserveIntent.putExtra("scheduledAtMs", reserveTimeMs);
-                PendingIntent reservePi = PendingIntent.getBroadcast(this, reserveCode, reserveIntent, piFlags);
                 boolean loginScheduled = loginTimeMs > System.currentTimeMillis();
                 try {
                         if (loginScheduled) setExactAlarm(am, loginTimeMs, loginPi);
                         else am.cancel(loginPi);
-                        setExactAlarm(am, reserveTimeMs, reservePi);
                 } catch (RuntimeException e) {
                         try {
                                 am.cancel(loginPi);
-                                am.cancel(reservePi);
                         } catch (RuntimeException cancelError) {
                                 stateManager.appendLog(1, "闹钟回滚失败：" + cancelError.getClass().getSimpleName());
                         }
@@ -264,9 +276,9 @@ public class MainActivity extends AppCompatActivity {
                         ? "\n账号2 错峰延迟: " + staggerMs + "ms"
                         : "";
 
-                stateManager.appendLog(1, "闹钟已安排：预登录="
+                stateManager.appendLog(1, "闹钟已安排：服务唤醒="
                         + (loginScheduled ? stf.format(loginTimeMs) : "已跳过")
-                        + "，预约=" + stf.format(reserveTimeMs) + "，偏移=" + offsetMs + "ms"
+                        + "，服务内预约到点=" + stf.format(reserveTimeMs) + "，偏移=" + offsetMs + "ms"
                         + "，模式=" + modeStr + staggerInfo);
                 updateCountdown();
                 updatePowerStatus();
@@ -426,6 +438,62 @@ public class MainActivity extends AppCompatActivity {
                 int vis = dual ? View.VISIBLE : View.GONE;
                 tvLog2Header.setVisibility(vis);
                 tvLog2.setVisibility(vis);
+        }
+
+        private void showRoomPicker() {
+                String current = etRoomId.getText().toString().trim();
+                List<String> selected = new ArrayList<>();
+                if (!current.isEmpty()) selected.addAll(Arrays.asList(current.split(",")));
+                boolean[] checked = new boolean[ROOM_IDS.length];
+                List<Integer> selectionOrder = new ArrayList<>();
+                for (int i = 0; i < ROOM_IDS.length; i++) checked[i] = selected.contains(ROOM_IDS[i]);
+                for (String id : selected) {
+                        int index = Arrays.asList(ROOM_IDS).indexOf(id);
+                        if (index >= 0) selectionOrder.add(index);
+                }
+                AlertDialog dialog = new AlertDialog.Builder(this)
+                        .setTitle("按顺序选择研讨间（只能选择同一类型）")
+                        .setMultiChoiceItems(ROOM_NAMES, checked, (d, which, isChecked) -> {
+                                int firstType = -1;
+                                for (int i = 0; i < checked.length; i++) if (checked[i]) { firstType = i >= 10 ? 1 : 0; break; }
+                                if (isChecked && firstType >= 0 && (which >= 10 ? 1 : 0) != firstType) {
+                                        ((AlertDialog) d).getListView().setItemChecked(which, false);
+                                        Toast.makeText(this, "小研讨间和大研讨间不能混选", Toast.LENGTH_SHORT).show();
+                                } else {
+                                        checked[which] = isChecked;
+                                        if (isChecked && !selectionOrder.contains(which)) selectionOrder.add(which);
+                                        if (!isChecked) selectionOrder.remove((Integer) which);
+                                }
+                        })
+                        .setPositiveButton("确定", (d, w) -> {
+                                StringBuilder ids = new StringBuilder();
+                                for (int i : selectionOrder) if (checked[i]) {
+                                        if (ids.length() > 0) ids.append(",");
+                                        ids.append(ROOM_IDS[i]);
+                                }
+                                etRoomId.setText(ids.toString());
+                                saveState();
+                        })
+                        .setNegativeButton("取消", null).create();
+                dialog.show();
+        }
+
+        private boolean validateRoomSelection(String value) {
+                String[] ids = value.split(",");
+                int type = -1;
+                for (String raw : ids) {
+                        String id = raw.trim();
+                        if (id.isEmpty()) continue;
+                        int index = Arrays.asList(ROOM_IDS).indexOf(id);
+                        if (index < 0) continue;
+                        int current = index >= 10 ? 1 : 0;
+                        if (type < 0) type = current;
+                        else if (type != current) {
+                                Toast.makeText(this, "小研讨间和大研讨间不能混选", Toast.LENGTH_LONG).show();
+                                return false;
+                        }
+                }
+                return true;
         }
 
         private void saveState() {
