@@ -109,6 +109,13 @@ public class ReservationManager {
 
     public void start(String user, String pwd, String roomId, String date,
                       String start, String end, String reason, String extraMembers) {
+        // 手动执行和定时回退都会直接进入 start()。同步保存预约参数，
+        // 否则 cachedRoomIds 仍为空，登录成功后 executeRoom() 会误判为没有研讨间。
+        setReservationParams(roomId, date, start, end, reason);
+        if (parseRoomIds(cachedRoomIds).isEmpty()) {
+            log("❌ 未选择有效研讨间，任务未启动");
+            return;
+        }
         List<TimeSegment> segs = getFilteredSegments(start, end);
         log("🚀 开始任务 | 账号: " + user
                 + " | 日期: " + date

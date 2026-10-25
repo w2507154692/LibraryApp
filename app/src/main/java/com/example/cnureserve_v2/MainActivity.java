@@ -396,7 +396,10 @@ public class MainActivity extends AppCompatActivity {
                 boolean dual = !u2.isEmpty();
                 setDualAccountMode(dual);
 
+                if (rid.isEmpty() || !validateRoomSelection(rid)) return;
+
                 stateManager.appendLog(1, "手动执行开始");
+                stateManager.appendLog(1, "手动执行研讨间列表=" + rid);
 
                 if (dual) {
                         long staggerMs = parseLongSafe(etStaggerMs.getText().toString(), 0L);
@@ -488,9 +491,11 @@ public class MainActivity extends AppCompatActivity {
         private boolean validateRoomSelection(String value) {
                 String[] ids = value.split(",");
                 int type = -1;
+                int nonEmptyCount = 0;
                 for (String raw : ids) {
                         String id = raw.trim();
                         if (id.isEmpty()) continue;
+                        nonEmptyCount++;
                         int index = Arrays.asList(ROOM_IDS).indexOf(id);
                         if (index < 0) continue;
                         int current = index >= 10 ? 1 : 0;
@@ -499,6 +504,10 @@ public class MainActivity extends AppCompatActivity {
                                 Toast.makeText(this, "小研讨间和大研讨间不能混选", Toast.LENGTH_LONG).show();
                                 return false;
                         }
+                }
+                if (nonEmptyCount == 0) {
+                        Toast.makeText(this, "请选择有效研讨间", Toast.LENGTH_LONG).show();
+                        return false;
                 }
                 return true;
         }
