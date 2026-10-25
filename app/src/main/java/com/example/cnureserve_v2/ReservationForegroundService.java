@@ -159,6 +159,10 @@ public class ReservationForegroundService extends Service {
 
     private void runPendingReservation() {
         if (pendingReserveIntent == null) return;
+        if (reservationStarted) {
+            pendingReserveIntent = null;
+            return;
+        }
         if (stateManager.getCachedToken(1).isEmpty()) {
             long remaining = pendingReserveAtMs - System.currentTimeMillis();
             if (remaining > 0L) {
@@ -168,6 +172,7 @@ public class ReservationForegroundService extends Service {
             stateManager.appendLog(1, "服务内预约到点但登录 token 尚未完成，立即走备用全流程");
         }
         waitingForReserve = false;
+        reservationStarted = true;
         Intent reserve = pendingReserveIntent;
         pendingReserveIntent = null;
         stateManager.appendLog(1, "服务内预约到点，开始执行");
