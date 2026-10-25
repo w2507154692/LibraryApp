@@ -5,6 +5,7 @@ import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Base64;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.io.IOException;
@@ -457,6 +458,16 @@ public class ReservationManager {
             for (String key : new String[]{"uuid", "resvUuid", "resvId", "id"})
                 if (data.has(key) && !data.get(key).isJsonNull()) return data.get(key).getAsString();
         }
+        if (resp.has("data") && resp.get("data").isJsonArray()) {
+            for (JsonElement item : resp.getAsJsonArray("data")) {
+                if (item.isJsonObject()) {
+                    String id = findReservationId(item.getAsJsonObject());
+                    if (id != null) return id;
+                }
+            }
+        }
+        if (resp.has("data") && resp.get("data").isJsonPrimitive())
+            return resp.get("data").getAsString();
         return null;
     }
 
