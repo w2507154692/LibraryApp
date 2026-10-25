@@ -34,6 +34,7 @@ public class ReservationForegroundService extends Service {
     private int activeManagers    = 0;
     private int completedManagers = 0;
     private boolean waitingForReserve = false;
+    private boolean reservationStarted = false;
 
     @Override
     public void onCreate() {
@@ -73,6 +74,10 @@ public class ReservationForegroundService extends Service {
         if (!ACTION_LOGIN.equals(action) && !ACTION_RESERVE.equals(action)) {
             stateManager.appendLog(1, "服务收到未知动作，未执行");
             stopSelf(startId);
+            return START_NOT_STICKY;
+        }
+        if (ACTION_RESERVE.equals(action) && reservationStarted) {
+            stateManager.appendLog(1, "备用 RESERVE 闹钟到达，但任务已开始，忽略重复触发");
             return START_NOT_STICKY;
         }
         long scheduledAt = intent.getLongExtra("scheduledAtMs", 0L);
@@ -121,6 +126,7 @@ public class ReservationForegroundService extends Service {
         try {
             if (ACTION_RESERVE.equals(action)) {
                 waitingForReserve = false;
+                reservationStarted = true;
                 String staggerInfo = (hasTwoAccounts && staggerMs > 0)
                         ? "（账号2 错峰 " + staggerMs + "ms）"
                         : "";

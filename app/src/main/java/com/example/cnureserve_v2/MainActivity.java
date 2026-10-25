@@ -241,17 +241,24 @@ public class MainActivity extends AppCompatActivity {
                 int oldSequence = stateManager.getAlarmSequence();
                 int nextSequence = oldSequence >= 1_000_000 ? 1 : oldSequence + 1;
                 int loginCode = 1000 + nextSequence * 2;
+                int reserveCode = loginCode + 1;
                 Intent loginIntent = new Intent(schedule);
                 loginIntent.putExtra("action", "LOGIN");
                 long wakeTimeMs = Math.max(loginTimeMs, System.currentTimeMillis() + 1_000L);
                 loginIntent.putExtra("scheduledAtMs", wakeTimeMs);
                 PendingIntent loginPi = PendingIntent.getBroadcast(this, loginCode, loginIntent, piFlags);
+                Intent reserveIntent = new Intent(schedule);
+                reserveIntent.putExtra("action", "RESERVE");
+                reserveIntent.putExtra("scheduledAtMs", reserveTimeMs);
+                PendingIntent reservePi = PendingIntent.getBroadcast(this, reserveCode, reserveIntent, piFlags);
                 boolean loginScheduled = true;
                 try {
                         setExactAlarm(am, wakeTimeMs, loginPi);
+                        setExactAlarm(am, reserveTimeMs, reservePi);
                 } catch (RuntimeException e) {
                         try {
                                 am.cancel(loginPi);
+                                am.cancel(reservePi);
                         } catch (RuntimeException cancelError) {
                                 stateManager.appendLog(1, "闹钟回滚失败：" + cancelError.getClass().getSimpleName());
                         }
